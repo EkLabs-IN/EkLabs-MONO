@@ -1,0 +1,1 @@
+# Map SAP columns to PharmaDocument

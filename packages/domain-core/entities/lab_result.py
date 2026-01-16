@@ -1,0 +1,1 @@
+# Class: LabResult (Standardized Data)

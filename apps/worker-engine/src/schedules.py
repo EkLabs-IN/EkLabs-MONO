@@ -1,0 +1,1 @@
+# Cron jobs (e.g., "Sync LIMS every hour")

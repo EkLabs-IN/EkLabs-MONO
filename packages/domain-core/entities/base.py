@@ -1,0 +1,1 @@
+# Common fields (id, tenant_id, created_at)
