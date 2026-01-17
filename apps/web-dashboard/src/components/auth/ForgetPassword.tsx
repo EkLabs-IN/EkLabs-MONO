@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { validateEmail, validatePassword } from '@/lib/authUtils';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
+import { API_BASE_URL } from '@/lib/apiClient';
 
 interface ForgetPasswordProps {
   /**
@@ -73,7 +74,7 @@ export function ForgetPassword({ onBack, onSuccess }: ForgetPasswordProps) {
 
     try {
       // Call API to request password reset
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/forgot-password`, {
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -112,7 +113,7 @@ export function ForgetPassword({ onBack, onSuccess }: ForgetPasswordProps) {
 
     try {
       // Verify OTP with backend
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/verify-reset-otp`, {
+      const response = await fetch(`${API_BASE_URL}/auth/verify-reset-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -157,7 +158,7 @@ export function ForgetPassword({ onBack, onSuccess }: ForgetPasswordProps) {
 
     try {
       // Reset password with backend
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/reset-password`, {
+      const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -186,7 +187,7 @@ export function ForgetPassword({ onBack, onSuccess }: ForgetPasswordProps) {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/forgot-password`, {
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
