@@ -1,3 +1,10 @@
 {
+  "builds": [{ "src": "src/main.py", "use": "@vercel/python" }],
+  "functions": {
+    "src/main.py": {
+      "runtime": "python3.11",
+      "maxDuration": 10
+    }
+  },
   "rewrites": [{ "source": "/(.*)", "destination": "src/main.py" }]
 }
