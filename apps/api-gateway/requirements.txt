@@ -1,1 +1,40 @@
-# Specific API dependencies
+# FastAPI - Modern web framework for building APIs
+fastapi==0.115.0
+uvicorn[standard]==0.32.0  # ASGI server
+
+# Session management and authentication
+python-jose[cryptography]==3.3.0  # JWT token handling
+passlib[bcrypt]==1.7.4  # Password hashing
+python-multipart==0.0.17  # Form data parsing
+
+# Supabase client for user management
+supabase==2.9.0
+postgrest==0.17.2
+
+# Database
+asyncpg==0.29.0  # PostgreSQL async driver
+sqlalchemy==2.0.35  # ORM
+
+# Redis for session storage
+redis==5.2.0
+hiredis==3.0.0  # Redis protocol parser (faster)
+
+# Environment and configuration
+python-dotenv==1.0.1
+pydantic==2.10.0
+pydantic-settings==2.6.0
+
+# Security
+cryptography==43.0.3  # Compatible with Python 3.9
+itsdangerous==2.2.0  # Secure session cookies
+
+# Utilities
+email-validator==2.2.0
+python-dateutil==2.9.0
+aiosmtplib==3.0.2  # Async SMTP client for sending emails
+
+# CORS and middleware
+starlette==0.38.6  # Compatible with FastAPI 0.115.0
+
+# Logging and monitoring
+structlog==24.4.0

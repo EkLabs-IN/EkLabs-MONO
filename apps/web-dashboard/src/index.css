@@ -1,0 +1,263 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Core palette - Pharmaceutical Navy */
+    --background: 220 20% 97%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary - Deep Navy (Trust, Authority) */
+    --primary: 222 47% 18%;
+    --primary-foreground: 210 40% 98%;
+
+    /* Secondary - Slate Blue */
+    --secondary: 215 25% 92%;
+    --secondary-foreground: 222 47% 18%;
+
+    --muted: 215 20% 94%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 215 25% 90%;
+    --accent-foreground: 222 47% 18%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 215 20% 88%;
+    --input: 215 20% 88%;
+    --ring: 222 47% 18%;
+
+    --radius: 0.375rem;
+
+    /* Compliance Status Colors */
+    --status-compliant: 152 69% 31%;
+    --status-compliant-bg: 152 69% 95%;
+    --status-warning: 38 92% 50%;
+    --status-warning-bg: 38 92% 95%;
+    --status-critical: 0 72% 51%;
+    --status-critical-bg: 0 72% 96%;
+    --status-info: 217 91% 60%;
+    --status-info-bg: 217 91% 96%;
+    --status-draft: 262 83% 58%;
+    --status-draft-bg: 262 83% 96%;
+
+    /* Role Colors */
+    --role-qa: 200 80% 40%;
+    --role-qc: 160 60% 40%;
+    --role-production: 25 80% 50%;
+    --role-regulatory: 280 60% 50%;
+    --role-sales: 340 75% 55%;
+    --role-management: 222 47% 25%;
+    --role-admin: 0 0% 40%;
+
+    /* Confidence Indicators */
+    --confidence-high: 152 69% 31%;
+    --confidence-medium: 38 92% 50%;
+    --confidence-low: 0 72% 51%;
+
+    /* Sidebar */
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 210 40% 90%;
+    --sidebar-primary: 210 40% 98%;
+    --sidebar-primary-foreground: 222 47% 11%;
+    --sidebar-accent: 222 47% 18%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 222 30% 20%;
+    --sidebar-ring: 217 91% 60%;
+
+    /* Query Interface */
+    --query-bg: 220 20% 99%;
+    --query-border: 215 25% 85%;
+    --response-bg: 0 0% 100%;
+    --source-tag: 217 91% 60%;
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 222 30% 18%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 222 30% 15%;
+    --muted-foreground: 215 20% 60%;
+
+    --accent: 222 30% 18%;
+    --accent-foreground: 210 40% 96%;
+
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 222 30% 20%;
+    --input: 222 30% 20%;
+    --ring: 210 40% 80%;
+
+    --sidebar-background: 222 47% 6%;
+    --sidebar-foreground: 210 40% 90%;
+    --sidebar-primary: 210 40% 98%;
+    --sidebar-primary-foreground: 222 47% 6%;
+    --sidebar-accent: 222 47% 12%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 222 30% 15%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  /* Mono font for codes, IDs, timestamps */
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer components {
+  /* Compliance Badge Styles */
+  .badge-approved {
+    @apply bg-[hsl(var(--status-compliant-bg))] text-[hsl(var(--status-compliant))] border border-[hsl(var(--status-compliant))]/20;
+  }
+
+  .badge-draft {
+    @apply bg-[hsl(var(--status-draft-bg))] text-[hsl(var(--status-draft))] border border-[hsl(var(--status-draft))]/20;
+  }
+
+  .badge-warning {
+    @apply bg-[hsl(var(--status-warning-bg))] text-[hsl(var(--status-warning))] border border-[hsl(var(--status-warning))]/20;
+  }
+
+  .badge-critical {
+    @apply bg-[hsl(var(--status-critical-bg))] text-[hsl(var(--status-critical))] border border-[hsl(var(--status-critical))]/20;
+  }
+
+  /* Card hover states for compliance items */
+  .compliance-card {
+    @apply bg-card border border-border rounded-lg transition-all duration-200;
+  }
+
+  .compliance-card:hover {
+    @apply shadow-md border-primary/20;
+  }
+
+  /* Query response styling */
+  .query-response {
+    @apply bg-response-bg border border-border rounded-lg p-4;
+  }
+
+  /* Timestamp styling */
+  .timestamp {
+    @apply font-mono text-xs text-muted-foreground;
+  }
+
+  /* Source document tag */
+  .source-tag {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-[hsl(var(--status-info-bg))] text-[hsl(var(--status-info))];
+  }
+
+  /* Confidence indicator bar */
+  .confidence-bar {
+    @apply h-1.5 rounded-full bg-muted overflow-hidden;
+  }
+
+  .confidence-fill {
+    @apply h-full rounded-full transition-all duration-500;
+  }
+
+  /* Read-only indicator */
+  .read-only-badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground;
+  }
+
+  /* Audit trail entry */
+  .audit-entry {
+    @apply flex items-start gap-3 py-3 border-b border-border last:border-0;
+  }
+
+  /* Role indicator dot */
+  .role-indicator {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  /* Sensitivity flag */
+  .sensitivity-high {
+    @apply border-l-4 border-l-[hsl(var(--status-critical))];
+  }
+
+  .sensitivity-medium {
+    @apply border-l-4 border-l-[hsl(var(--status-warning))];
+  }
+
+  .sensitivity-low {
+    @apply border-l-4 border-l-[hsl(var(--status-info))];
+  }
+}
+
+@layer utilities {
+  /* Prevent user selection for compliance */
+  .no-select {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Disable copy for restricted content */
+  .no-copy {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Fade in animation */
+  .fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Pulse for alerts */
+  .pulse-alert {
+    animation: pulseAlert 2s ease-in-out infinite;
+  }
+
+  @keyframes pulseAlert {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+}

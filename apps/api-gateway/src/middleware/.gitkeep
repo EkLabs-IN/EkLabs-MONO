@@ -1,0 +1,33 @@
+# Middleware Directory
+
+This directory contains custom middleware components for the FastAPI application.
+
+## Planned Middleware
+
+- **RateLimitMiddleware**: Rate limiting to prevent abuse
+- **AuditLogMiddleware**: Request/response logging for compliance
+- **ErrorHandlerMiddleware**: Centralized error handling
+- **RequestIDMiddleware**: Unique request ID tracking
+
+## Creating Middleware
+
+Example middleware structure:
+
+```python
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import Request
+
+class CustomMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Pre-processing
+        response = await call_next(request)
+        # Post-processing
+        return response
+```
+
+Register in `main.py`:
+
+```python
+from .middleware.custom import CustomMiddleware
+app.add_middleware(CustomMiddleware)
+```
