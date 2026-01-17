@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/health",
-      "destination": "https://ek-labs-mono.vercel.app/health"
-    },
-    {
       "source": "/api/:path*",
       "destination": "https://ek-labs-mono.vercel.app/api/:path*"
     }
