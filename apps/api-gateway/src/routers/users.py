@@ -12,7 +12,7 @@ import structlog
 from ..dependencies import get_supabase_client
 
 logger = structlog.get_logger()
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(tags=["users"])
 
 
 class UserResponse(BaseModel):
@@ -50,11 +50,11 @@ async def select_data_source(
     
     try:
         # Update user metadata in Supabase to mark data source as selected
+        # Note: We only update the has_selected_data_source flag, not the entire session
         response = supabase.auth.admin.update_user_by_id(
             user_id,
             {
                 "user_metadata": {
-                    **user_session,  # Preserve existing metadata
                     "has_selected_data_source": True
                 }
             }

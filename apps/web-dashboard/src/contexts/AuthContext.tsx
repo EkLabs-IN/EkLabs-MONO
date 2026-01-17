@@ -18,6 +18,16 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const coerceBoolean = (value: unknown): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return ['true', '1', 'yes', 'y', 't'].includes(normalized);
+  }
+  if (typeof value === 'number') return value !== 0;
+  return false;
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [hasSelectedDataSource, setHasSelectedDataSource] = useState<boolean>(false);
@@ -37,7 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           lastLogin: response.last_login || new Date().toISOString(),
         };
         setUser(userData);
-        setHasSelectedDataSource(response.has_selected_data_source || false);
+        setHasSelectedDataSource(coerceBoolean(response.has_selected_data_source));
       } catch (error) {
         // Not authenticated or error
         setUser(null);
@@ -52,18 +62,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     try {
       const response = await apiClient.login(email, password);
-      
+
       if (response.success && response.user) {
+        const sessionUser = response.user;
         const userData: User = {
-          id: response.user.id,
-          name: response.user.name,
-          email: response.user.email,
-          role: response.user.role as UserRole,
-          department: response.user.department,
-          lastLogin: response.user.last_login || new Date().toISOString(),
+          id: sessionUser.user_id || sessionUser.id || '',
+          name: sessionUser.name,
+          email: sessionUser.email,
+          role: sessionUser.role as UserRole,
+          department: sessionUser.department,
+          lastLogin: sessionUser.last_login || new Date().toISOString(),
         };
         setUser(userData);
-        setHasSelectedDataSource(response.user.has_selected_data_source || false);
+        setHasSelectedDataSource(coerceBoolean(sessionUser.has_selected_data_source));
         return true;
       }
       return false;
@@ -85,44 +96,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         'Executive Leadership': 'management',
         'Information Technology': 'admin',
       };
-      
+
       const role = roleMap[data.department] || 'qa';
-      
-      const response = await apiClient.signup({
+
+      await apiClient.signup({
         email: data.email,
         password: data.password,
         name: data.name,
         role,
         department: data.department,
       });
-      
-      return response.success || false;
+
+      return true;
     } catch (error) {
       console.error('Signup failed:', error);
-      return false;
+      const message = error instanceof Error ? error.message : 'Registration failed. Please try again.';
+      throw new Error(message);
     }
   }, []);
 
   const verifyOTP = useCallback(async (email: string, otp: string): Promise<boolean> => {
     try {
       const response = await apiClient.verifyOTP(email, otp);
-      
-      if (response.success && response.user) {
+
+      if (response.user) {
+        const sessionUser = response.user;
         const userData: User = {
-          id: response.user.id,
-          name: response.user.name,
-          email: response.user.email,
-          role: response.user.role as UserRole,
-          department: response.user.department,
-          lastLogin: response.user.last_login || new Date().toISOString(),
+          id: sessionUser.user_id || sessionUser.id || '',
+          name: sessionUser.name,
+          email: sessionUser.email,
+          role: sessionUser.role as UserRole,
+          department: sessionUser.department,
+          lastLogin: sessionUser.last_login || new Date().toISOString(),
         };
         setUser(userData);
+        setHasSelectedDataSource(coerceBoolean(sessionUser.has_selected_data_source));
         return true;
       }
-      return false;
+
+      throw new Error('Invalid or expired verification code.');
     } catch (error) {
       console.error('OTP verification failed:', error);
-      return false;
+      const message = error instanceof Error ? error.message : 'Invalid or expired verification code.';
+      throw new Error(message);
     }
   }, []);
 

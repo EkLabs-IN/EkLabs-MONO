@@ -7,7 +7,8 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { ConfidenceIndicator } from '@/components/ui/ConfidenceIndicator';
 import { QueryResponse, SourceDocument, QueryHistoryItem } from '@/types/query';
 import { ROLE_CONFIGS } from '@/types/roles';
-import apiClient from '@/lib/apiClient';
+// NOTE: API integration is intentionally disabled for now.
+// We will re-enable apiClient usage once the backend query service is ready.
 
 // Sample data for demonstration
 const SAMPLE_QUERIES: Record<string, string[]> = {
@@ -48,29 +49,141 @@ const SAMPLE_QUERIES: Record<string, string[]> = {
   ]
 };
 
-const SAMPLE_RESPONSE: QueryResponse = {
-  id: 'resp-001',
-  timestamp: new Date().toISOString(),
-  query: 'Show recurring deviations linked to HVAC in last 12 months',
-  summary: `Analysis of HVAC-related deviations over the past 12 months reveals 14 documented incidents across 3 manufacturing areas. The primary root causes identified are:
+const SAMPLE_RESPONSES: Record<string, QueryResponse[]> = {
+  qa: [
+    {
+      id: 'resp-qa-001',
+      timestamp: new Date().toISOString(),
+      query: 'Show recurring deviations linked to HVAC in last 12 months',
+      summary: `Analysis of HVAC-related deviations over the past 12 months reveals 14 documented incidents across 3 manufacturing areas. The primary root causes identified are:
 
 1. **Filter replacement delays** (6 incidents) - Linked to supply chain issues in Q2 2024
 2. **Temperature excursions** (5 incidents) - Concentrated in Building B, Area 3
 3. **Pressure differential failures** (3 incidents) - Associated with aging equipment
 
 Corrective actions have been implemented for 11 of 14 deviations. 3 CAPAs remain open with target completion dates in February 2025.`,
-  confidence: 'high',
-  confidenceScore: 92,
-  dataStatus: 'current',
-  sources: [
-    { id: 'DEV-2024-0142', title: 'HVAC Temperature Excursion - Bldg B', type: 'Deviation', status: 'approved', department: 'Manufacturing', traceabilityId: 'TR-DEV-142' },
-    { id: 'DEV-2024-0089', title: 'Filter Replacement Delay Impact', type: 'Deviation', status: 'approved', department: 'Facilities', traceabilityId: 'TR-DEV-089' },
-    { id: 'CAPA-2024-0034', title: 'HVAC Monitoring Enhancement', type: 'CAPA', status: 'draft', department: 'Quality', traceabilityId: 'TR-CAPA-034' },
-    { id: 'SOP-ENV-003', title: 'Environmental Monitoring Procedure', type: 'SOP', version: 'v4.2', status: 'approved', department: 'Quality', traceabilityId: 'TR-SOP-ENV003' }
+      confidence: 'high',
+      confidenceScore: 92,
+      dataStatus: 'current',
+      sources: [
+        { id: 'DEV-2024-0142', title: 'HVAC Temperature Excursion - Bldg B', type: 'Deviation', status: 'approved', department: 'Manufacturing', traceabilityId: 'TR-DEV-142' },
+        { id: 'DEV-2024-0089', title: 'Filter Replacement Delay Impact', type: 'Deviation', status: 'approved', department: 'Facilities', traceabilityId: 'TR-DEV-089' },
+        { id: 'CAPA-2024-0034', title: 'HVAC Monitoring Enhancement', type: 'CAPA', status: 'draft', department: 'Quality', traceabilityId: 'TR-CAPA-034' },
+        { id: 'SOP-ENV-003', title: 'Environmental Monitoring Procedure', type: 'SOP', version: 'v4.2', status: 'approved', department: 'Quality', traceabilityId: 'TR-SOP-ENV003' }
+      ],
+      sensitivityLevel: 'medium',
+      regulatorySensitive: true,
+      partialAccess: false
+    }
   ],
-  sensitivityLevel: 'medium',
-  regulatorySensitive: true,
-  partialAccess: false
+  qc: [
+    {
+      id: 'resp-qc-001',
+      timestamp: new Date().toISOString(),
+      query: 'Any historical OOS for Product X, Test Y?',
+      summary: `Three historical OOS events were recorded for Product X (Test Y) in the past 24 months. Two were confirmed laboratory errors and closed. One remains open pending additional stability data.`,
+      confidence: 'medium',
+      confidenceScore: 78,
+      dataStatus: 'current',
+      sources: [
+        { id: 'OOS-2024-0034', title: 'Dissolution Failure - Product X Batch 2024-091', type: 'OOS', status: 'approved', department: 'QC Lab', traceabilityId: 'TR-OOS-034' },
+        { id: 'OOT-2024-0089', title: 'Assay Trending - Product X Stability', type: 'OOT', status: 'approved', department: 'Stability', traceabilityId: 'TR-OOT-089' }
+      ],
+      sensitivityLevel: 'medium',
+      regulatorySensitive: true,
+      partialAccess: false
+    }
+  ],
+  production: [
+    {
+      id: 'resp-prod-001',
+      timestamp: new Date().toISOString(),
+      query: 'Equipment maintenance due this week',
+      summary: `Two equipment items are due for preventive maintenance this week: Fluid Bed Dryer (PM due Jan 19) and Blender Line 2 (PM due Jan 21). No critical impact is expected with scheduled downtime.`,
+      confidence: 'high',
+      confidenceScore: 88,
+      dataStatus: 'current',
+      sources: [
+        { id: 'EQ-2024-0089', title: 'Fluid Bed Dryer - PM Due', type: 'Equipment', status: 'approved', department: 'Maintenance', traceabilityId: 'TR-EQ-089' },
+        { id: 'EQ-2024-0093', title: 'Blender Line 2 - PM Schedule', type: 'Equipment', status: 'approved', department: 'Maintenance', traceabilityId: 'TR-EQ-093' }
+      ],
+      sensitivityLevel: 'low',
+      regulatorySensitive: false,
+      partialAccess: false
+    }
+  ],
+  regulatory: [
+    {
+      id: 'resp-reg-001',
+      timestamp: new Date().toISOString(),
+      query: 'All deviations cited in last USFDA inspection',
+      summary: `The last USFDA inspection cited 4 deviations: documentation control gaps, environmental monitoring trend review delays, CAPA closure timeliness, and training record completeness. Two items have been fully closed; two are under remediation with timelines submitted.`,
+      confidence: 'high',
+      confidenceScore: 85,
+      dataStatus: 'current',
+      sources: [
+        { id: 'INS-2024-0005', title: 'USFDA Inspection 2024 - Observation Summary', type: 'Inspection', status: 'approved', department: 'Regulatory', traceabilityId: 'TR-INS-005' },
+        { id: 'CAPA-2024-0120', title: 'CAPA for Documentation Controls', type: 'CAPA', status: 'approved', department: 'Quality', traceabilityId: 'TR-CAPA-120' }
+      ],
+      sensitivityLevel: 'high',
+      regulatorySensitive: true,
+      partialAccess: false
+    }
+  ],
+  sales: [
+    {
+      id: 'resp-sales-001',
+      timestamp: new Date().toISOString(),
+      query: 'Client compliance requirements summary',
+      summary: `Top client compliance requirements include: audit readiness documentation within 5 business days, batch traceability reports, and change control notification within 10 days. All current products meet baseline requirements; two products require updated stability data packages for EU submissions.`,
+      confidence: 'medium',
+      confidenceScore: 74,
+      dataStatus: 'current',
+      sources: [
+        { id: 'RFP-2024-0089', title: 'Client RFP Requirements - GlobalPharma', type: 'RFP', status: 'approved', department: 'Sales', traceabilityId: 'TR-RFP-089' },
+        { id: 'DOC-REG-014', title: 'EU Stability Data Package', type: 'Document', status: 'approved', department: 'Regulatory', traceabilityId: 'TR-DOC-014' }
+      ],
+      sensitivityLevel: 'medium',
+      regulatorySensitive: false,
+      partialAccess: false
+    }
+  ],
+  management: [
+    {
+      id: 'resp-mgmt-001',
+      timestamp: new Date().toISOString(),
+      query: 'Compliance risk overview this quarter',
+      summary: `Compliance risk remains moderate with two elevated areas: CAPA closure timelines and training completion for new hires. Overall compliance index improved from 88% to 91% QoQ.`,
+      confidence: 'high',
+      confidenceScore: 90,
+      dataStatus: 'current',
+      sources: [
+        { id: 'RISK-001', title: 'Q4 Compliance Risk Review', type: 'Risk', status: 'approved', department: 'Quality', traceabilityId: 'TR-RISK-001' },
+        { id: 'COMP-001', title: 'Training Compliance Summary', type: 'Compliance', status: 'approved', department: 'HR', traceabilityId: 'TR-COMP-001' }
+      ],
+      sensitivityLevel: 'medium',
+      regulatorySensitive: true,
+      partialAccess: false
+    }
+  ],
+  admin: [
+    {
+      id: 'resp-admin-001',
+      timestamp: new Date().toISOString(),
+      query: 'System health status',
+      summary: `System health is stable. API uptime at 99.8% over the last 30 days. One pending maintenance window scheduled for Jan 21, 2026.`,
+      confidence: 'high',
+      confidenceScore: 93,
+      dataStatus: 'current',
+      sources: [
+        { id: 'SYS-2024-0089', title: 'Database Maintenance Window', type: 'System', status: 'approved', department: 'IT', traceabilityId: 'TR-SYS-089' },
+        { id: 'LOG-2024-122', title: 'Service Uptime Report', type: 'Log', status: 'approved', department: 'IT', traceabilityId: 'TR-LOG-122' }
+      ],
+      sensitivityLevel: 'low',
+      regulatorySensitive: false,
+      partialAccess: false
+    }
+  ]
 };
 
 export function QueryInterface() {
@@ -92,39 +205,28 @@ export function QueryInterface() {
     setIsLoading(true);
     setShowSuggestions(false);
 
-    try {
-      // Call backend API
-      const apiResponse = await apiClient.executeQuery(query);
-      
-      // Transform API response to match frontend QueryResponse type
+    // NOTE: Backend API calls are intentionally disabled until the query service is ready.
+    // const apiResponse = await apiClient.executeQuery(query);
+    // TODO: Replace dummy response with real API response when backend integration is complete.
+
+    const roleResponses = SAMPLE_RESPONSES[user.role] || [];
+    const suggestedIndex = suggestedQueries.findIndex((suggestion) => suggestion === query);
+    const fallbackResponse = roleResponses[0];
+    const baseResponse = roleResponses[suggestedIndex] || fallbackResponse;
+
+    if (baseResponse) {
       setResponse({
+        ...baseResponse,
         id: `resp-${Date.now()}`,
-        timestamp: apiResponse.timestamp,
+        timestamp: new Date().toISOString(),
         query,
-        summary: apiResponse.answer,
-        confidence: apiResponse.confidence >= 0.8 ? 'high' : apiResponse.confidence >= 0.5 ? 'medium' : 'low',
-        confidenceScore: Math.round(apiResponse.confidence * 100),
-        dataStatus: 'current',
-        sources: apiResponse.sources.map((src: any, idx: number) => ({
-          id: `src-${idx}`,
-          title: src.title,
-          type: src.type || 'Document',
-          status: 'approved',
-          department: user?.department || 'Unknown',
-          traceabilityId: `TR-${idx}`
-        })),
-        sensitivityLevel: 'medium',
-        regulatorySensitive: false,
-        partialAccess: false
       });
-    } catch (error) {
-      console.error('Query failed:', error);
-      // Show error message to user
+    } else {
       setResponse({
         id: `resp-error-${Date.now()}`,
         timestamp: new Date().toISOString(),
         query,
-        summary: 'Sorry, there was an error processing your query. Please try again.',
+        summary: 'No dummy response is configured for this role yet.',
         confidence: 'low',
         confidenceScore: 0,
         dataStatus: 'current',
@@ -133,9 +235,9 @@ export function QueryInterface() {
         regulatorySensitive: false,
         partialAccess: false
       });
-    } finally {
-      setIsLoading(false);
     }
+
+    setIsLoading(false);
   };
 
   const handleSuggestionClick = (suggestion: string) => {

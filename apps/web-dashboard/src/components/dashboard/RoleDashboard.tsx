@@ -137,10 +137,12 @@ const ROLE_DASHBOARDS: Record<UserRole, {
 export function RoleDashboard() {
   const { user } = useAuth();
 
-  if (!user) return null;
+  if (!user || !user.role) return null;
 
   const roleConfig = ROLE_CONFIGS[user.role];
   const dashboardConfig = ROLE_DASHBOARDS[user.role];
+  
+  if (!roleConfig || !dashboardConfig) return null;
 
   const stats = dashboardConfig.stats.map((stat, idx) => ({
     ...stat,

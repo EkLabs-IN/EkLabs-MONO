@@ -20,23 +20,22 @@ All endpoints return consistent JSON responses with proper HTTP status codes.
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
-import secrets
+import hashlib
 import re
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from gotrue.errors import AuthApiError
 from pydantic import BaseModel, EmailStr, Field, validator
-from passlib.context import CryptContext
+import httpx
 import structlog
 
 from ..dependencies import (
     get_settings,
     get_supabase_client,
     get_current_user,
-    get_current_user_optional,
     set_session_data,
     clear_session,
-    verify_user_exists_in_supabase,
 )
 
 # Initialize router
@@ -45,12 +44,11 @@ router = APIRouter()
 # Initialize logger
 logger = structlog.get_logger()
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Track pending OTP requests to route resend logic and avoid duplicate submissions
+otp_request_state: dict[str, dict] = {}
 
-# In-memory OTP storage (in production, use Redis)
-# Structure: {email: {"otp": "123456", "expires": datetime, "purpose": "signup|reset"}}
-otp_storage: dict[str, dict] = {}
+# Track verified OTP tokens for password reset to allow subsequent password update
+verified_reset_tokens: dict[str, dict] = {}
 
 
 # ============================================================================
@@ -140,173 +138,179 @@ class ResendOTPRequest(BaseModel):
 # Utility Functions
 # ============================================================================
 
-def generate_otp() -> str:
-    """
-    Generate a secure 6-digit OTP code.
-    
-    Returns:
-        str: 6-digit OTP code
-    """
-    return str(secrets.randbelow(900000) + 100000)
+PURPOSE_TO_SUPABASE_TYPE = {
+    "signup": "signup",
+    "reset": "recovery",
+}
 
 
-def store_otp(email: str, otp: str, purpose: str = "signup") -> None:
-    """
-    Store OTP in memory with expiration time.
-    
-    Args:
-        email: User email address
-        otp: Generated OTP code
-        purpose: OTP purpose (signup, reset)
-    """
-    settings = get_settings()
-    expiry = datetime.utcnow() + timedelta(minutes=settings.OTP_EXPIRY_MINUTES)
-    
-    otp_storage[email] = {
-        "otp": otp,
-        "expires": expiry,
-        "purpose": purpose,
+def _coerce_bool(value: Any) -> bool:
+    """Normalize truthy metadata values that may arrive as strings."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        return normalized in {"true", "1", "yes", "y", "t"}
+    if isinstance(value, (int, float)):
+        return value != 0
+    return False
+
+
+def _build_supabase_headers(settings) -> dict[str, str]:
+    """Compose headers required for Supabase Auth REST calls."""
+    return {
+        "apikey": settings.SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json",
     }
-    
-    logger.info(
-        "OTP stored",
-        email=email,
-        purpose=purpose,
-        expires=expiry.isoformat(),
-    )
 
 
-def verify_otp(email: str, otp: str, purpose: str = "signup") -> bool:
-    """
-    Verify OTP code for given email.
-    
-    Args:
-        email: User email address
-        otp: OTP code to verify
-        purpose: Expected purpose (signup, reset)
-        
-    Returns:
-        bool: True if OTP is valid and not expired
-    """
-    stored_otp_data = otp_storage.get(email)
-    
-    if not stored_otp_data:
-        logger.warning("OTP verification failed: no OTP found", email=email)
-        return False
-    
-    # Check if OTP matches
-    if stored_otp_data["otp"] != otp:
-        logger.warning("OTP verification failed: incorrect code", email=email)
-        return False
-    
-    # Check if OTP purpose matches
-    if stored_otp_data["purpose"] != purpose:
-        logger.warning(
-            "OTP verification failed: purpose mismatch",
-            email=email,
-            expected=purpose,
-            actual=stored_otp_data["purpose"],
-        )
-        return False
-    
-    # Check if OTP has expired
-    if datetime.utcnow() > stored_otp_data["expires"]:
-        logger.warning("OTP verification failed: expired", email=email)
-        del otp_storage[email]  # Clean up expired OTP
-        return False
-    
-    return True
+def _user_attr(user_obj, attribute: str, default=None):
+    """Safely access Supabase user attributes across dict/object formats."""
+    if isinstance(user_obj, dict):
+        return user_obj.get(attribute, default)
+    return getattr(user_obj, attribute, default)
 
 
-async def send_otp_email(email: str, otp: str, purpose: str = "signup") -> None:
-    """
-    Send OTP via email using SMTP.
-    
-    Sends email in production mode or logs to console in development.
-    Uses SMTP2GO or configured SMTP server.
-    
-    Args:
-        email: Recipient email address
-        otp: OTP code to send
-        purpose: Email purpose (signup, reset)
-    """
+def _track_otp_request(email: str, purpose: str) -> None:
+    """Record the latest OTP request purpose for resend handling."""
+    otp_request_state[email] = {
+        "purpose": purpose,
+        "requested_at": datetime.utcnow(),
+    }
+
+
+def _record_verified_reset_token(email: str, otp: str) -> None:
+    """Remember verified reset OTP hashes so password update can proceed."""
     settings = get_settings()
-    
-    # Always log OTP in development mode or when real emails are disabled
-    if settings.DEBUG or not settings.SEND_REAL_EMAILS:
-        logger.info(
-            "📧 OTP Email (Development Mode)",
-            email=email,
-            otp=otp,
-            purpose=purpose,
-            message=f"Your verification code is: {otp}",
+    verified_reset_tokens[email] = {
+        "token_hash": hashlib.sha256(otp.encode()).hexdigest(),
+        "expires": datetime.utcnow() + timedelta(minutes=settings.OTP_EXPIRY_MINUTES),
+    }
+
+
+def _ensure_reset_token_is_valid(email: str, otp: str) -> None:
+    """Validate cached reset OTP before updating the password."""
+    entry = verified_reset_tokens.get(email)
+    if not entry:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset verification is missing or expired. Please request a new code.",
         )
-    
-    # Send real email if configured
-    if settings.SEND_REAL_EMAILS and settings.SMTP_USER and settings.SMTP_PASSWORD:
-        try:
-            import aiosmtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-            
-            # Email subject based on purpose
-            subject = "Email Verification Code" if purpose == "signup" else "Password Reset Code"
-            
-            # Create HTML email
-            message = MIMEMultipart("alternative")
-            message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
-            message["To"] = email
-            message["Subject"] = subject
-            
-            # HTML body
-            html_body = f"""
-            <html>
-              <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                  <h2 style="color: #4f46e5;">EkLabs Authentication</h2>
-                  <p>Your verification code is:</p>
-                  <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
-                    <h1 style="color: #4f46e5; margin: 0; font-size: 36px; letter-spacing: 8px;">{otp}</h1>
-                  </div>
-                  <p>This code will expire in {settings.OTP_EXPIRY_MINUTES} minutes.</p>
-                  <p style="color: #6b7280; font-size: 14px;">If you didn't request this code, please ignore this email.</p>
-                  <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
-                  <p style="color: #9ca3af; font-size: 12px;">This is an automated message, please do not reply.</p>
-                </div>
-              </body>
-            </html>
-            """
-            
-            # Text body (fallback)
-            text_body = f"""
-            EkLabs Authentication
-            
-            Your verification code is: {otp}
-            
-            This code will expire in {settings.OTP_EXPIRY_MINUTES} minutes.
-            
-            If you didn't request this code, please ignore this email.
-            """
-            
-            message.attach(MIMEText(text_body, "plain"))
-            message.attach(MIMEText(html_body, "html"))
-            
-            # Send email via SMTP
-            await aiosmtplib.send(
-                message,
-                hostname=settings.SMTP_HOST,
-                port=settings.SMTP_PORT,
-                username=settings.SMTP_USER,
-                password=settings.SMTP_PASSWORD,
-                start_tls=True,
+    if entry["token_hash"] != hashlib.sha256(otp.encode()).hexdigest():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code. Please request a new one.",
+        )
+    if datetime.utcnow() > entry["expires"]:
+        verified_reset_tokens.pop(email, None)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification code expired. Please request a new one.",
+        )
+
+
+async def send_supabase_otp(email: str, purpose: str = "signup") -> None:
+    """Trigger Supabase-managed OTP email delivery for the supplied purpose."""
+    supabase_type = PURPOSE_TO_SUPABASE_TYPE.get(purpose)
+    if not supabase_type:
+        raise ValueError(f"Unsupported OTP purpose: {purpose}")
+
+    settings = get_settings()
+    payload = {"email": email, "type": supabase_type}
+    if supabase_type == "signup":
+        payload["create_user"] = False
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                f"{settings.SUPABASE_URL}/auth/v1/otp",
+                headers=_build_supabase_headers(settings),
+                json=payload,
             )
-            
-            logger.info("Email sent successfully", email=email, purpose=purpose)
-            
-        except Exception as e:
-            logger.error("Failed to send email", email=email, error=str(e))
-            # Don't raise exception - continue with OTP stored in system
-            # User can still use it if they check logs or use resend
+        response.raise_for_status()
+        _track_otp_request(email, purpose)
+        logger.info("Supabase OTP dispatched", email=email, purpose=purpose)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in {401, 403}:
+            logger.error(
+                "Supabase OTP dispatch unauthorized",
+                email=email,
+                purpose=purpose,
+                status_code=exc.response.status_code,
+                error=exc.response.text,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Supabase credentials are invalid or missing. Please verify SUPABASE_SERVICE_KEY.",
+            ) from exc
+        logger.warning(
+            "Supabase OTP dispatch rejected",
+            email=email,
+            purpose=purpose,
+            status_code=exc.response.status_code,
+            error=exc.response.text,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to send verification code for this email. Please verify the request and try again.",
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 - relay full context upstream
+        logger.error("Supabase OTP dispatch failed", email=email, purpose=purpose, error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to send verification code. Please try again later.",
+        ) from exc
+
+
+async def verify_supabase_otp(email: str, otp: str, purpose: str = "signup") -> dict:
+    """Verify OTP using Supabase Auth REST API and return response payload."""
+    supabase_type = PURPOSE_TO_SUPABASE_TYPE.get(purpose)
+    if not supabase_type:
+        raise ValueError(f"Unsupported OTP purpose: {purpose}")
+
+    settings = get_settings()
+    payload = {"email": email, "token": otp, "type": supabase_type}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                f"{settings.SUPABASE_URL}/auth/v1/verify",
+                headers=_build_supabase_headers(settings),
+                json=payload,
+            )
+        response.raise_for_status()
+        body = response.json()
+        logger.info("Supabase OTP verified", email=email, purpose=purpose)
+        return body
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "Supabase OTP verification failed",
+            email=email,
+            purpose=purpose,
+            status_code=exc.response.status_code,
+            error=exc.response.text,
+        )
+        return {}
+    except Exception as exc:  # noqa: BLE001 - propagate failure context
+        logger.error("Supabase OTP verification error", email=email, purpose=purpose, error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Verification service is unavailable. Please try again later.",
+        ) from exc
+
+
+# Legacy SMTP OTP helpers retained for future migrations if Supabase integration changes.
+# def _legacy_generate_otp() -> str:
+#     return str(secrets.randbelow(900000) + 100000)
+#
+# def _legacy_store_otp(email: str, otp: str, purpose: str = "signup") -> None:
+#     expiry = datetime.utcnow() + timedelta(minutes=get_settings().OTP_EXPIRY_MINUTES)
+#     otp_storage[email] = {"otp": otp, "expires": expiry, "purpose": purpose}
+#
+# async def _legacy_send_email(email: str, otp: str, purpose: str = "signup") -> None:
+#     await send_otp_email(email, otp, purpose)  # Placeholder for previous SMTP flow
+
 
 
 # ============================================================================
@@ -321,7 +325,7 @@ async def signup(request: Request, data: SignUpRequest):
     Flow:
     1. Validate user doesn't already exist in Supabase
     2. Create user in Supabase authentication
-    3. Generate and send OTP for email verification
+    3. Ask Supabase Auth to deliver the OTP email
     4. Store user metadata (pending verification)
     
     Args:
@@ -337,14 +341,6 @@ async def signup(request: Request, data: SignUpRequest):
     supabase = get_supabase_client()
     
     try:
-        # Check if user already exists in Supabase
-        if verify_user_exists_in_supabase(data.email):
-            logger.warning("Signup attempt with existing email", email=data.email)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="An account with this email already exists. Please sign in.",
-            )
-        
         # Create user in Supabase
         auth_response = supabase.auth.admin.create_user({
             "email": data.email,
@@ -357,13 +353,9 @@ async def signup(request: Request, data: SignUpRequest):
                 "created_at": datetime.utcnow().isoformat(),
             }
         })
-        
-        # Generate and store OTP
-        otp = generate_otp()
-        store_otp(data.email, otp, purpose="signup")
-        
-        # Send OTP via email
-        await send_otp_email(data.email, otp, purpose="signup")
+
+        # Delegate OTP delivery to Supabase-managed SMTP service
+        await send_supabase_otp(data.email, purpose="signup")
         
         logger.info(
             "User signup initiated",
@@ -378,6 +370,44 @@ async def signup(request: Request, data: SignUpRequest):
             "requires_verification": True,
         }
         
+    except AuthApiError as exc:
+        message = getattr(exc, "message", "") or str(exc)
+        normalized = message.lower()
+        status_code = getattr(exc, "status", None)
+
+        if status_code in {401, 403} or "not allowed" in normalized:
+            logger.error("Supabase signup unauthorized", email=data.email, error=message, status=status_code)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Supabase service role key is missing or invalid. Please verify SUPABASE_SERVICE_KEY.",
+            ) from exc
+
+        if status_code in {400, 409, 422} and (
+            "already registered" in normalized or "user already exists" in normalized
+        ):
+            logger.info(
+                "Signup reuse detected; resending verification code",
+                email=data.email,
+                error=message,
+            )
+            try:
+                await send_supabase_otp(data.email, purpose="signup")
+            except HTTPException:
+                raise
+
+            return {
+                "message": "This email is already registered. We have resent the verification code.",
+                "email": data.email,
+                "requires_verification": True,
+                "already_registered": True,
+            }
+
+        logger.error("Supabase signup error", email=data.email, error=message, status=status_code)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration failed. Please verify the information and try again.",
+        ) from exc
+
     except HTTPException:
         raise
     except Exception as e:
@@ -409,58 +439,54 @@ async def verify_signup_otp(request: Request, data: VerifyOTPRequest):
     Raises:
         HTTPException: 400 if OTP is invalid or expired
     """
-    supabase = get_supabase_client()
-    
-    # Verify OTP
-    if not verify_otp(data.email, data.otp, purpose="signup"):
+    verification = await verify_supabase_otp(data.email, data.otp, purpose="signup")
+    if not verification:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired verification code.",
         )
     
-    try:
-        # Get user from Supabase by email
-        response = supabase.auth.admin.list_users()
-        users = response.data if hasattr(response, 'data') else response
-        
-        user_data = None
-        for user in users:
-            if user.email == data.email:
-                user_data = user
-                break
-        
-        if not user_data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found.",
-            )
-        
-        # Update user to mark email as verified
-        supabase.auth.admin.update_user_by_id(
-            user_data.id,
-            {"email_confirm": True}
+    user_payload = verification.get("user") if isinstance(verification, dict) else None
+
+    if not user_payload:
+        logger.error("OTP verification response missing user payload", email=data.email)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Verification service did not return user information.",
         )
-        
-        # Clean up OTP
-        del otp_storage[data.email]
-        
-        # Create session
-        user_session = {
-            "user_id": user_data.id,
-            "email": user_data.email,
-            "role": user_data.user_metadata.get("role"),
-            "name": user_data.user_metadata.get("name"),
-            "department": user_data.user_metadata.get("department"),
+
+    try:
+        otp_request_state.pop(data.email, None)
+
+        metadata = user_payload.get("user_metadata") or {}
+        session_metadata = {
+            "user_id": user_payload.get("id"),
+            "email": user_payload.get("email"),
+            "role": metadata.get("role"),
+            "name": metadata.get("name"),
+            "department": metadata.get("department"),
+            "has_selected_data_source": _coerce_bool(metadata.get("has_selected_data_source")),
         }
-        set_session_data(request, "user", user_session)
-        
-        logger.info("User verified and logged in", email=data.email, user_id=user_data.id)
-        
+
+        if not session_metadata["user_id"] or not session_metadata["email"]:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Incomplete user data returned after verification.",
+            )
+
+        set_session_data(request, "user", session_metadata)
+
+        logger.info(
+            "User verified and logged in",
+            email=data.email,
+            user_id=session_metadata["user_id"],
+        )
+
         return {
             "message": "Email verified successfully.",
-            "user": user_session,
+            "user": session_metadata,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -509,7 +535,7 @@ async def signin(request: Request, data: SignInRequest):
             )
         
         user = auth_response.user
-        
+
         # Check if email is verified
         if not user.email_confirmed_at:
             logger.warning("Login attempt with unverified email", email=data.email)
@@ -517,15 +543,40 @@ async def signin(request: Request, data: SignInRequest):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Please verify your email before signing in.",
             )
-        
+
+        metadata = user.user_metadata or {}
+        has_selected_data_source = _coerce_bool(metadata.get("has_selected_data_source"))
+
+        # Fetch user data from database table (fallback to user_metadata)
+        try:
+            db_user = supabase.table('users').select('*').eq('email', data.email).execute()
+            if db_user.data and len(db_user.data) > 0:
+                user_record = db_user.data[0]
+                role = user_record.get('role')
+                name = user_record.get('name')
+                department = user_record.get('department')
+                has_selected_data_source = _coerce_bool(
+                    user_record.get('has_selected_data_source', has_selected_data_source)
+                )
+            else:
+                # Fallback to user_metadata
+                role = metadata.get("role")
+                name = metadata.get("name")
+                department = metadata.get("department")
+        except:
+            # If table query fails, use user_metadata
+            role = metadata.get("role")
+            name = metadata.get("name")
+            department = metadata.get("department")
+
         # Create session
         user_session = {
             "user_id": user.id,
             "email": user.email,
-            "role": user.user_metadata.get("role"),
-            "name": user.user_metadata.get("name"),
-            "department": user.user_metadata.get("department"),
-            "has_selected_data_source": user.user_metadata.get("has_selected_data_source", False),
+            "role": role,
+            "name": name,
+            "department": department,
+            "has_selected_data_source": has_selected_data_source,
         }
         set_session_data(request, "user", user_session)
         
@@ -574,8 +625,7 @@ async def forgot_password(data: ForgotPasswordRequest):
     
     Flow:
     1. Check if user exists in Supabase
-    2. Generate OTP for password reset
-    3. Send OTP via email
+    2. Ask Supabase Auth to deliver the password reset OTP email
     
     Args:
         data: User email address
@@ -587,21 +637,28 @@ async def forgot_password(data: ForgotPasswordRequest):
         Returns success even if user doesn't exist (security best practice)
         to prevent email enumeration attacks.
     """
-    # Check if user exists
-    user_exists = verify_user_exists_in_supabase(data.email)
-    
-    if user_exists:
-        # Generate and store OTP
-        otp = generate_otp()
-        store_otp(data.email, otp, purpose="reset")
-        
-        # Send OTP via email
-        await send_otp_email(data.email, otp, purpose="reset")
-        
+    try:
+        await send_supabase_otp(data.email, purpose="reset")
         logger.info("Password reset OTP sent", email=data.email)
-    else:
-        # Log but don't reveal user doesn't exist
-        logger.info("Password reset attempt for non-existent user", email=data.email)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_400_BAD_REQUEST:
+            logger.info(
+                "Password reset attempt for non-existent or unverified user",
+                email=data.email,
+                detail=exc.detail,
+            )
+            # Attempt to resend signup verification for unverified accounts
+            try:
+                await send_supabase_otp(data.email, purpose="signup")
+                logger.info("Signup verification resent during password reset flow", email=data.email)
+            except HTTPException as resend_exc:
+                logger.debug(
+                    "Signup OTP resend skipped during password reset fallback",
+                    email=data.email,
+                    detail=resend_exc.detail,
+                )
+        else:
+            raise
     
     # Always return success to prevent email enumeration
     return {
@@ -623,12 +680,15 @@ async def verify_reset_otp(data: VerifyOTPRequest):
     Raises:
         HTTPException: 400 if OTP is invalid or expired
     """
-    if not verify_otp(data.email, data.otp, purpose="reset"):
+    verification = await verify_supabase_otp(data.email, data.otp, purpose="reset")
+    if not verification:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired verification code.",
         )
     
+    _record_verified_reset_token(data.email, data.otp)
+    otp_request_state.pop(data.email, None)
     logger.info("Password reset OTP verified", email=data.email)
     
     return {
@@ -642,9 +702,9 @@ async def reset_password(data: ResetPasswordRequest):
     Reset user password after OTP verification.
     
     Flow:
-    1. Verify OTP one final time
+    1. Confirm Supabase OTP verification recently succeeded
     2. Update password in Supabase
-    3. Clean up OTP
+    3. Clear cached verification markers
     
     Args:
         data: Email, OTP, and new password
@@ -658,12 +718,14 @@ async def reset_password(data: ResetPasswordRequest):
     """
     supabase = get_supabase_client()
     
-    # Verify OTP
-    if not verify_otp(data.email, data.otp, purpose="reset"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired verification code.",
-        )
+    try:
+        _ensure_reset_token_is_valid(data.email, data.otp)
+    except HTTPException:
+        # Fallback: re-verify OTP to recover if server state was reset.
+        verification = await verify_supabase_otp(data.email, data.otp, purpose="reset")
+        if not verification:
+            raise
+        _record_verified_reset_token(data.email, data.otp)
     
     try:
         # Get user from Supabase
@@ -688,8 +750,8 @@ async def reset_password(data: ResetPasswordRequest):
             {"password": data.new_password}
         )
         
-        # Clean up OTP
-        del otp_storage[data.email]
+        # Clean up cached verification marker
+        verified_reset_tokens.pop(data.email, None)
         
         logger.info("Password reset successful", email=data.email, user_id=user_data.id)
         
@@ -719,10 +781,9 @@ async def resend_otp(data: ResendOTPRequest):
         dict: Success message
         
     Note:
-        Determines purpose (signup vs reset) based on existing OTP in storage.
+        Determines purpose (signup vs reset) based on the cached request state.
     """
-    # Check if there's an existing OTP
-    existing_otp = otp_storage.get(data.email)
+    existing_otp = otp_request_state.get(data.email)
     
     if not existing_otp:
         raise HTTPException(
@@ -731,13 +792,7 @@ async def resend_otp(data: ResendOTPRequest):
         )
     
     purpose = existing_otp["purpose"]
-    
-    # Generate new OTP
-    otp = generate_otp()
-    store_otp(data.email, otp, purpose=purpose)
-    
-    # Send OTP
-    await send_otp_email(data.email, otp, purpose=purpose)
+    await send_supabase_otp(data.email, purpose=purpose)
     
     logger.info("OTP resent", email=data.email, purpose=purpose)
     

@@ -44,10 +44,12 @@ interface AppSidebarProps {
 export function AppSidebar({ activeView, onNavigate }: AppSidebarProps) {
   const { user, logout } = useAuth();
   
-  if (!user) return null;
+  if (!user || !user.role) return null;
 
   const RoleIcon = roleIcons[user.role];
   const roleConfig = ROLE_CONFIGS[user.role];
+  
+  if (!RoleIcon || !roleConfig) return null;
 
   const navItems: NavItem[] = [
     { label: 'Dashboard', icon: Home, href: 'dashboard' },
@@ -82,8 +84,8 @@ export function AppSidebar({ activeView, onNavigate }: AppSidebarProps) {
             <RoleIcon className={cn('w-5 h-5', `text-role-${user.role}`)} />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-sidebar-primary truncate">{user.name}</p>
-            <p className="text-xs text-sidebar-foreground/60 truncate">{roleConfig.fullName}</p>
+            <p className="text-sm font-medium text-sidebar-primary truncate">{user.name || 'User'}</p>
+            <p className="text-xs text-sidebar-foreground/60 truncate">{roleConfig?.fullName || 'Role'}</p>
           </div>
         </div>
       </div>

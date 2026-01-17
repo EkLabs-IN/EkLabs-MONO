@@ -87,6 +87,7 @@ export function ForgetPassword({ onBack, onSuccess }: ForgetPasswordProps) {
 
       // Move to OTP verification step
       setCurrentStep('otp');
+      setOtp('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send reset code');
     } finally {
@@ -205,6 +206,16 @@ export function ForgetPassword({ onBack, onSuccess }: ForgetPasswordProps) {
     }
   };
 
+  const handleBackToEmail = () => {
+    setError('');
+    setCurrentStep('email');
+  };
+
+  const handleBackToOTP = () => {
+    setError('');
+    setCurrentStep('otp');
+  };
+
   // Render based on current step
   return (
     <div className="w-full max-w-md space-y-6">
@@ -317,6 +328,15 @@ export function ForgetPassword({ onBack, onSuccess }: ForgetPasswordProps) {
             </p>
             <button
               type="button"
+              onClick={handleBackToEmail}
+              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              disabled={isLoading}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Change email
+            </button>
+            <button
+              type="button"
               onClick={onBack}
               className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
               disabled={isLoading}
@@ -409,6 +429,18 @@ export function ForgetPassword({ onBack, onSuccess }: ForgetPasswordProps) {
               {isLoading ? 'Resetting password...' : 'Reset Password'}
             </Button>
           </form>
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={handleBackToOTP}
+              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              disabled={isLoading}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to verification code
+            </button>
+          </div>
         </>
       )}
 

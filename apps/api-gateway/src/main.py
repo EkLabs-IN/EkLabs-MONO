@@ -39,13 +39,23 @@ app = FastAPI(
 
 # Configure CORS (Cross-Origin Resource Sharing)
 # Allows frontend to communicate with backend from different origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,  # Frontend URLs
-    allow_credentials=True,  # Allow cookies and auth headers
-    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allow all headers
-)
+# In DEBUG mode, allow all origins for local development
+if settings.DEBUG:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|172\.\d+\.\d+\.\d+):\d+",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.ALLOWED_ORIGINS,  # Frontend URLs
+        allow_credentials=True,  # Allow cookies and auth headers
+        allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
+        allow_headers=["*"],  # Allow all headers
+    )
 
 # Configure session middleware for cookie-based authentication
 # Uses itsdangerous to sign session cookies securely

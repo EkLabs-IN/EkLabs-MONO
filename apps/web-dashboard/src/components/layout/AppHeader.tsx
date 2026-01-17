@@ -11,7 +11,7 @@ interface AppHeaderProps {
 export function AppHeader({ title, subtitle }: AppHeaderProps) {
   const { user } = useAuth();
 
-  if (!user) return null;
+  if (!user || !user.name) return null;
 
   return (
     <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between">
@@ -39,13 +39,13 @@ export function AppHeader({ title, subtitle }: AppHeaderProps) {
         <div className="flex items-center gap-3 pl-4 border-l border-border">
           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
             <span className="text-sm font-medium text-primary-foreground">
-              {user.name.split(' ').map(n => n[0]).join('')}
+              {user.name?.split(' ').map(n => n[0]).join('') || 'U'}
             </span>
           </div>
           <div className="hidden lg:block">
             <p className="text-sm font-medium text-foreground">{user.name}</p>
             <p className="text-xs text-muted-foreground font-mono">
-              {new Date(user.lastLogin).toLocaleDateString()}
+              {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'N/A'}
             </p>
           </div>
         </div>

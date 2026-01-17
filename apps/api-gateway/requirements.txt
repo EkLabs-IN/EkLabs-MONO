@@ -14,9 +14,12 @@ postgrest==0.17.2
 # Database
 asyncpg==0.29.0  # PostgreSQL async driver
 sqlalchemy==2.0.35  # ORM
+# jsonschema==3.2.0
+jsonschema[format-nongpl]>=4.18.0
 
 # Redis for session storage
-redis==5.2.0
+# redis==5.2.0
+redis>=3.5,<4.0
 hiredis==3.0.0  # Redis protocol parser (faster)
 
 # Environment and configuration
@@ -25,13 +28,14 @@ pydantic==2.10.0
 pydantic-settings==2.6.0
 
 # Security
-cryptography==43.0.3  # Compatible with Python 3.9
+# Pin below 41 to avoid Rust bindings issues on Windows/Python 3.9
+cryptography==40.0.2  # Compatible with Python 3.9
 itsdangerous==2.2.0  # Secure session cookies
 
 # Utilities
 email-validator==2.2.0
 python-dateutil==2.9.0
-aiosmtplib==3.0.2  # Async SMTP client for sending emails
+httpx==0.27.2  # Async HTTP client for Supabase OTP workflow
 
 # CORS and middleware
 starlette==0.38.6  # Compatible with FastAPI 0.115.0

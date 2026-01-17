@@ -42,6 +42,7 @@ export function DataSourceSelection({ onComplete }: DataSourceSelectionProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadComplete, setUploadComplete] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -93,6 +94,18 @@ export function DataSourceSelection({ onComplete }: DataSourceSelectionProps) {
       alert('Failed to proceed. Please try again.');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleProceedAfterUpload = async () => {
+    try {
+      setIsCompleting(true);
+      await onComplete();
+    } catch (error) {
+      console.error('Failed to continue to dashboard:', error);
+      alert('Unable to continue. Please try again.');
+    } finally {
+      setIsCompleting(false);
     }
   };
 
@@ -154,10 +167,21 @@ export function DataSourceSelection({ onComplete }: DataSourceSelectionProps) {
             </p>
           </div>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              In the meantime, you can explore our sample data:
-            </p>
-            <Button onClick={handleSampleData} size="lg" className="w-full" disabled={isProcessing}>
+            <Button onClick={handleProceedAfterUpload} size="lg" className="w-full" disabled={isCompleting}>
+              {isCompleting ? (
+                <>
+                  <Loader2 className="mr-2 w-5 h-5 animate-spin" />
+                  Preparing dashboard...
+                </>
+              ) : (
+                <>
+                  Continue to Dashboard
+                  <ChevronRight className="ml-2 w-5 h-5" />
+                </>
+              )}
+            </Button>
+            <p className="text-sm text-muted-foreground">Prefer to explore with sample data?</p>
+            <Button onClick={handleSampleData} size="lg" variant="outline" className="w-full" disabled={isProcessing}>
               {isProcessing ? (
                 <>
                   <Loader2 className="mr-2 w-5 h-5 animate-spin" />

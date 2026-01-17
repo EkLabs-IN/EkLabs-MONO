@@ -46,17 +46,14 @@ export function LandingPage() {
    * Initiates OTP verification flow
    */
   const handleSignUp = async (data: SignUpData) => {
-    // Store sign-up data for later use after OTP verification
-    setPendingSignUpData(data);
-    
-    // Initiate sign-up process (sends OTP)
-    const success = await signUp(data);
-    if (!success) {
-      throw new Error('Registration failed. Email may already be in use.');
+    try {
+      await signUp(data);
+      setPendingSignUpData(data);
+      setAuthStep('otp-verification');
+    } catch (error) {
+      setPendingSignUpData(null);
+      throw error;
     }
-    
-    // Move to OTP verification step
-    setAuthStep('otp-verification');
   };
 
   /**
@@ -92,6 +89,7 @@ export function LandingPage() {
   const handleBackToSignUp = () => {
     setAuthStep('form');
     setPendingSignUpData(null);
+    setActiveTab('signup');
   };
 
   /**

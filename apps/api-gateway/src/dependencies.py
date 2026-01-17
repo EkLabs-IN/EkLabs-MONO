@@ -230,37 +230,77 @@ async def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]
 # Utility Functions
 # ============================================================================
 
+# def verify_user_exists_in_supabase(email: str) -> bool:
+#     """
+#     Check if a user exists in Supabase authentication.
+    
+#     Args:
+#         email: User email address
+        
+#     Returns:
+#         bool: True if user exists, False otherwise
+        
+#     Note:
+#         This function requires service role key to access user list.
+#     """
+#     try:
+#         supabase = get_supabase_client()
+        
+#         # Query Supabase auth.users table via admin API
+#         response = supabase.auth.admin.list_users()
+        
+#         if hasattr(response, 'data'):
+#             users = response.data
+#         else:
+#             users = response
+        
+#         # Check if email exists in user list
+#         for user in users:
+#             if user.email == email:
+#                 return True
+                
+#         return False
+        
+#     except Exception as e:
+#         logger.error("Error checking user existence", email=email, error=str(e))
+#         return False
+
+# ...existing code...
+
 def verify_user_exists_in_supabase(email: str) -> bool:
     """
-    Check if a user exists in Supabase authentication.
+    Check if a user exists in Supabase by email.
     
     Args:
-        email: User email address
+        email: User email to check
         
     Returns:
         bool: True if user exists, False otherwise
-        
-    Note:
-        This function requires service role key to access user list.
     """
     try:
         supabase = get_supabase_client()
         
-        # Query Supabase auth.users table via admin API
+        # Try to list users and find matching email
         response = supabase.auth.admin.list_users()
         
+        # Handle different response formats
         if hasattr(response, 'data'):
             users = response.data
+        elif hasattr(response, 'users'):
+            users = response.users
         else:
-            users = response
+            users = response if isinstance(response, list) else []
         
-        # Check if email exists in user list
+        # Check if any user has matching email
         for user in users:
-            if user.email == email:
+            if hasattr(user, 'email') and user.email == email:
                 return True
-                
+        
         return False
         
     except Exception as e:
         logger.error("Error checking user existence", email=email, error=str(e))
+        # On error, return False to allow signup attempt
+        # Supabase will handle duplicate email check
         return False
+
