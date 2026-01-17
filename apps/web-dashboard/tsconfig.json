@@ -7,6 +7,7 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
+      "@/lib/utils": ["./src/lib/utils.ts"],
       "@/*": ["./src/*"]
     },
     "noImplicitAny": false,
